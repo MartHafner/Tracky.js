@@ -1,0 +1,26 @@
+{
+  "name": "tracky-osint",
+  "version": "1.0.0",
+  "description": "Modular OSINT Tool for Social Media and Phone Number Analysis",
+  "main": "Tracky.js",
+  "scripts": {
+      "setup": "node setup.js",
+        "start": "node Tracky.js"
+  },
+  "keywords": [
+    "osint",
+    "tracker",
+    "socialmedia",
+    "phonenumber",
+    "security"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "cli-progress": "^3.12.0",
+    "libphonenumber-js": "^1.10.49",
+    "puppeteer": "^21.5.0"
+  }
+}
