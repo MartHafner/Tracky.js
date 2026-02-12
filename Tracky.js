@@ -50,6 +50,7 @@ function helper() {
     console.log(chalk.blue (' --help, -h: Zeigt diese Hilfe an'));
     console.log(chalk.blue (' --version, -v: Zeigt die aktuelle Version von Tracky an'));
     console.log(chalk.blue (' --number, -n <Zahl>: Sucht nach Handynummern'));
+    console.log(chalk.blue ('--search, -s <Benutzername>: Sucht nach Benutzername')
     Zeilenumbruch(3);
     process.exit(0) // Programm wird ohne Fehler beendet
 }
