@@ -1,45 +1,46 @@
-# Tracky.js
+# Tracky-OSINT
 
-**Tracky.js** ist ein OSINT-Tool (Open Source Intelligence) zur automatisierten Suche nach Social-Media-Profilen anhand eines Benutzernamens.  
-Es kombiniert **Axios** für schnelle statische Anfragen und **Puppeteer** für dynamische/geschützte Seiten um zu prüfen, ob Profile existieren.
+**Tracky-OSINT** ist ein modulares Open-Source-Intelligence (OSINT) Tool, das entwickelt wurde, um verschiedene Informationen anhand von Benutzernamen und Telefonnummern automatisiert zu analysieren. 
 
-> **Hinweis**: Dieses Tool ist ausschließlich für legale OSINT-Zwecke gedacht (z. B. eigene Recherchen, Pentesting mit Erlaubnis, Forschung). Die Verantwortung für die Nutzung liegt beim Anwender.
-
+> **Wichtiger Hinweis:** Dieses Tool darf ausschließlich für legale Zwecke verwendet werden. Die Nutzung ist nur im Rahmen geltender Gesetze zulässig. Der Anwender trägt die volle Verantwortung für die Verwendung dieses Tools.
 
 ## Inhaltsverzeichnis
 
-1. Features  
-2. Funktionsweise (Überblick)  
-3. Unterstützte Plattformen  
-4. Technischer Aufbau  
-5. Cache-System  
-6. Erkennungslogik (Profil gefunden / nicht gefunden)  
-7. Ablauf einer Abfrage  
-8. Installation und Nutzung
-9. Einschränkungen & Besonderheiten  
+1. [Features](#features)
+2. [Funktionsweise](#funktionsweise)
+3. [Unterstützte Plattformen](#unterstützte-plattformen)
+4. [Technischer Aufbau](#technischer-aufbau)
+5. [Cache- & Datenbank-System](#cache--datenbank-system)
+6. [Erkennungslogik](#erkennungslogik)
+7. [Ablauf einer Abfrage](#ablauf-einer-abfrage)
+8. [Installation](#installation)
+9. [Benutzung](#benutzung)
 
-
+---
 
 ## 1. Features
 
-- Automatische Suche nach Social-Media-Profilen
-- Kombination aus Axios und Puppeteer
-- Intelligente Erkennung von „Profil existiert nicht“
-- Fehler- und Timeout-Handling
-- Übersichtliche Konsolenausgabe
+- Automatische Suche nach Social-Media-Profilen anhand von Usernamen  
+- Analyse von Mobilfunk- und Festnetznummern mit Länder- und Anbieterinformationen  
+- Kombination aus Axios und Puppeteer für schnelle und dynamische Anfragen  
+- Nutzung von JSON-Datenbanken für Vorwahl- und Anbieterdaten (DE, US, FR)  
+- Intelligente Erkennung von „Profil existiert nicht“  
+- Fehler- und Timeout-Handling  
+- Übersichtliche Konsolenausgabe  
 
+---
 
+## 2. Funktionsweise
 
-## 2. Funktionsweise (Überblick)
-
-1. Benutzer gibt einen **Username** ein  
-2. Cache wird geprüft  
-3. Axios führt schnelle HTTP-Requests aus  
+1. Benutzer gibt einen **Username** oder eine Telefonnummer ein  
+2. Cache oder Datenbank wird geprüft  
+3. Für Social-Media: Axios führt schnelle HTTP-Requests aus  
 4. Unklare Ergebnisse werden mit Puppeteer geprüft  
-5. HTML wird analysiert  
-6. Ergebnis wird gespeichert und ausgegeben  
+5. Für Telefonnummern: `libphonenumber-js` ermittelt Typ, Land und Vorwahl  
+6. Festnetznummern werden mit Python-Skript `Festnetz_Analyse.py` analysiert  
+7. Ergebnisse werden gespeichert und in der Konsole ausgegeben  
 
-
+---
 
 ## 3. Unterstützte Plattformen
 
@@ -53,115 +54,164 @@ Es kombiniert **Axios** für schnelle statische Anfragen und **Puppeteer** für 
 - TikTok  
 - Pinterest  
 
-Die URLs werden dynamisch mit dem angegebenen Benutzernamen erzeugt.
+Die URLs für Social-Media werden dynamisch mit dem angegebenen Benutzernamen erzeugt. Telefonnummern werden nach Land, Vorwahl und Anbieter analysiert.
 
-
+---
 
 ## 4. Technischer Aufbau
 
-### Verwendete Libraries
+### Verwendete Libraries (Node.js)
 
 - **axios** → HTTP-Requests  
-- **puppeteer** → Headless-Browser für dynamische Seiten   
+- **puppeteer** → Headless-Browser für dynamische Seiten  
+- **chalk** → Farbige Konsolenausgabe  
+- **cli-progress** → Fortschrittsanzeige  
 - **readline** → CLI-Eingabe  
+- **libphonenumber-js** → Telefonnummern-Parsing und Validierung  
 
-### Logische Struktur
+### Python-Abhängigkeit
 
-- Hilfsfunktionen (HTML-Parsing)
-- Cache-Handling
-- Plattform-Liste
-- Erkennungslogik
-- Axios-Fetcher
-- Puppeteer-Fetcher
-- Hauptlogik + CLI
+- **phonenumbers** → Regionale Analyse von Festnetznummern  
 
+### Projektstruktur
+```text
+tracky-osint/
+├─ Tracky.js                      # Haupt-CLI
+├─ Profile_Check_Socialmedia.js   # Social-Media Modul
+├─ Number_Check.js                # Telefonnummern Analyse
+├─ Festnetz_Analyse.py            # Python Festnetz-Analyse
+├─ Vorwahl_Mobilfunk_DE_US.json   # DE & US Anbieter-Datenbank
+├─ Vorwahl_Mobilfunk_FR.json      # FR Anbieter-Datenbank
+├─ setup.js                       # Erstellt Projektverzeichnis Tracky-OSINT
+├─ package.json                   # Node Projektdefinition
+└─ README.md                      # Dokumentation
+````
 
+---
 
-## 5. Cache-System
+## 5. Cache- & Datenbank-System
 
-- Cache-Key: `cache_<username>`
-- Gültigkeit: **10 Minuten**
-- Speicherung: Ergebnis + Zeitstempel
+- Social-Media-Ergebnisse werden 10 Minuten zwischengespeichert (`cache_<username>`)  
+- JSON-Datenbanken enthalten Vorwahl- und Anbieterinformationen  
+- Reduziert API-Last und erhöht Performance  
 
-### Vorteile
-
-- Schnellere Folgeabfragen  
-- Weniger Requests  
-- Schonung von Rate-Limits  
-
-
+---
 
 ## 6. Erkennungslogik
 
-Tracky analysiert den HTML-Inhalt der Seite und sucht nach typischen Hinweisen für nicht existierende Profile.
+HTML-Inhalte werden analysiert und auf typische Fehlerindikatoren geprüft:
 
-### Erkannte Muster (Beispiel)
+- `page not found`  
+- `sorry, this page isn't available`  
+- `profil existiert nicht`  
+- `Dieser Account existiert nicht`  
+- `Dieses Konto wurde gesperrt`  
 
-- `page not found`
-- `sorry, this page isn't available`
-- `profil existiert nicht`
-- `Dieser Account existiert nicht`
-- `Dieses Konto wurde gesperrt`
+Plattform-spezifische Analyse:
 
-### Plattform-spezifisch
+- Instagram → Meta-Tags (og:title)  
+- Facebook → Titel & Body  
+- GitHub / Reddit → `<title>`  
+- LinkedIn → Login-Texte  
+- TikTok / YouTube / X → Titel & Body  
 
-- Instagram → Meta-Tags (og:title)
-- Facebook → Titel, Body & Textinhalt
-- GitHub / Reddit → `<title>`
-- LinkedIn → Login- & Privacy-Texte
-- TikTok / YouTube / X → Titel & Body
+Telefonnummern:
 
-Fallback: allgemeine Textsuche
+- Typ (Mobile/Festnetz)  
+- Land  
+- Vorwahl  
+- Anbieter  
+- Region (bei Festnetz via Python)
 
-
+---
 
 ## 7. Ablauf einer Abfrage
 
 ```text
-Username → Cache?
-   ↓ nein
-Axios Request
-   ↓ 200 OK?
-   → Puppeteer
+Input → Cache/DB prüfen
+   ↓ nicht vorhanden
+Axios / Telefonnummernprüfung
+   ↓ unklar
+Puppeteer / Python-Skript
    ↓ Analyse
 Ergebnis speichern
    ↓
-Ausgabe
+Konsolenausgabe
 ```
-## 8. Installation und Nutzung
 
-### Installation
+---
+
+## 8. Installation
+
+### Voraussetzungen
+
+- Node.js >= 18.x  
+- npm >= 9.x  
+- Python 3.x  
+- pip  
+
+### Projekt klonen
+
 ```bash
-npm install axios puppeteer cors
-```
-### Nutzung
-
-```Bash
-node tracky.js
+git clone <repo-url>
+cd tracky-osint
 ```
 
-### Ein- und Ausgabe
+### Node.js Abhängigkeiten installieren
 
-#### Eingabe
 ```bash
-Username: beispielname
+npm install
 ```
 
-#### Ausgabe
+### Projektverzeichnis automatisch erstellen
+
 ```bash
-(+) GEFUNDEN:       https://www.github.com/beispielname
-(-) NICHT GEFUNDEN: https://www.instagram.com/beispielname/
-(?) UNBEKANNT:      https://www.x.com/beispielname
-
-ZUSAMMENFASSUNG:
-==========================================================
-1 Gefunden | 1 Nicht gefunden | 1 Unbekannt | Dauer: 3.2s
-==========================================================
-
+npm run setup
 ```
 
-## 9. Einschränkungen
+Dieser Befehl erstellt automatisch das benötigte Verzeichnis `Tracky-OSINT`, falls es noch nicht existiert.
 
-- Private Profile können als vorhanden erkannt werden
-- Captchas & Rate-Limits möglich
-- HTML-Änderungen der Plattformen möglich
+### Python-Abhängigkeit installieren
+
+```bash
+pip install phonenumbers
+```
+
+---
+
+## 9. Benutzung
+
+### Hilfe anzeigen
+
+```bash
+node Tracky.js --help
+```
+
+### Social-Media-Suche
+
+```bash
+node Tracky.js --search MaxMustermann
+```
+
+Ausgabe:
+
+```text
+(+) GEFUNDEN:       https://www.github.com/MaxMustermann
+(-) NICHT GEFUNDEN: https://www.instagram.com/MaxMustermann/
+(?) UNBEKANNT:      https://www.x.com/MaxMustermann
+```
+
+### Telefonnummer analysieren
+
+```bash
+node Tracky.js --number +4915112345678
+```
+
+Ausgabe:
+
+```text
+Nummer:    +49 151 12345678
+Type:      MOBILE
+Land:      DE
+Anbieter:  Telekom
+```
