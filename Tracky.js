@@ -49,8 +49,10 @@ function helper() {
     Zeilenumbruch(3);
     console.log(chalk.blue (' --help, -h: Zeigt diese Hilfe an'));
     console.log(chalk.blue (' --version, -v: Zeigt die aktuelle Version von Tracky an'));
+    console.log(chalk.blue (' --exemple, -e: gibt beispiel Befehle aus'))
     console.log(chalk.blue (' --number, -n <Zahl>: Sucht nach Handynummern'));
-    console.log(chalk.blue ('--search, -s <Benutzername>: Sucht nach Benutzername')
+    console.log(chalk.blue (' --search, -s <Name>: Sucht nach Benutzernamen'));
+    console.log(chalk.blue (' --proxy, -p <URL>: Setzt einen Proxy für die Suche'))
     Zeilenumbruch(3);
     process.exit(0) // Programm wird ohne Fehler beendet
 }
@@ -115,9 +117,11 @@ function Phonenummer(parameter) {
 
 async function Arghandler(args) {
     // Erst kommt das Arg. und dann der Parameter 
-    // Beispiel: node Tracky.js --search MaxMustermann
+    // Beispiel: node Tracky.js --search MaxMustermann --proxy http://127.0.0.1:8080
     const LowercaseArgs = args[0].toLowerCase() // Wir nehmen das erste Argument und wandeln es in Kleinbuchstaben um, damit die Groß- und Kleinschreibung keine Rolle spielt
     const parameter = args[1]; // Das zweite Argument ist der Parameter, den die meisten Module benötigen, z.B. die Handynummer oder der Benutzername
+    const proxyArg = args[3];
+    const proxyURL = args[4];
     switch (LowercaseArgs) {
         // Wenn der Benutzer --help oder -h eingibt, wird die Hilfefunktion aufgerufen
         case "--help":
@@ -130,6 +134,7 @@ async function Arghandler(args) {
         case "--version":
         case "-v":
             console.log(chalk.blue("Tracky Version 1.0.0"));
+            process.exit(0); // Programm wird ohne Fehler beendet
             break;
 
 
@@ -137,7 +142,12 @@ async function Arghandler(args) {
         case "-s":
             Zeilenumbruch(2)
             console.log(chalk.blue(`Die angegebene Suche ist: ${parameter}`));
-            search(parameter);
+            if (proxyArg === '--proxy' || proxyArg === '-p') {
+                search(parameter, proxyURL)
+            }
+            else{
+                search(parameter)
+            }
             break;
 
 
@@ -145,8 +155,22 @@ async function Arghandler(args) {
         case "-n":
             Zeilenumbruch(2)
             console.log(chalk.blue(`Die angegebene Nummer ist: ${parameter}`));
-            Phonenummer(parameter);
+            if (proxyArg === '--proxy' || proxyArg === '-p') {
+                Phonenummer(parameter, proxyURL)
+            }
+            else{
+                Phonenummer(parameter)
+            }
             break;
+
+        case "--example":
+        case "-e":
+            Zeilenumbruch(2)
+            console.log(chalk.blue('node Tracky.js --search "MaxMustermann" --proxy http://127.0.0.1:8080'))
+            console.log(chalk.blue('node Tracky.js --number "+4917888560" --proxy http://127.0.0.1:8080'))
+            Zeilenumbruch(2)
+            process.exit(0); // Programm wird ohne Fehler beendet
+
 
 
         default:
