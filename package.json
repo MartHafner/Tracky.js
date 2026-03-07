@@ -1,6 +1,6 @@
 {
   "name": "tracky-osint",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Modular OSINT Tool for Social Media, E-Mail and Phone Number Analysis",
   "main": "Tracky.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "dotenv": "^16.4.0",
     "https-proxy-agent": "^7.0.6",
     "libphonenumber-js": "^1.10.49",
-    "puppeteer": "^24.37.2"
+    "puppeteer": "^24.37.2",
+    "user-agents": "^1.1.669"
   }
 }

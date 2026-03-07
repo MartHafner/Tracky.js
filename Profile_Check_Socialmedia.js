@@ -7,12 +7,16 @@ const cache = new Map(); // Einfacher In-Memory-Cache
 const CACHE_DURATION = 10 * 60 * 1000; // 10 Minuten in Millisekunden
 const puppeteer = require('puppeteer'); // Für dynamische Webseiten
 const chalk = require('chalk'); // Für farbige Konsolenausgabe
+const {HttpsProxyAgent} = require('https-proxy-agent'); // Für Proxy-Anfragen
+const UserAgent = require('user-agents'); // Für mehr Var beim senden von Daten an die Websites
+
 
 // Config für Readline
 const readline = require('readline').createInterface({
   input: process.stdin,
   output: process.stdout
 });
+
 
 //========================================================================================
 // Hilfsfunktionen
@@ -22,12 +26,58 @@ function Textonly(html) {
     return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getDynamicHeaders() { // Dynamische Header-generierung für mehr  Var in im Header
+    const ua = new UserAgent({ deviceCategory: 'desktop' });
+    const data = ua.data;
+
+    const browserVersion = data.browserVersion ?? data.appVersion ?? '120';  // Fallback
+    const browserName = data.browserName ?? 'Chrome';
+
+    return {
+        'User-Agent': data.userAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': Math.random() > 0.5 ? 'de-DE,de;q=0.9,en-US;q=0.8' : 'en-US,en;q=0.5',
+        'Sec-Ch-Ua': `"${browserName}";v="${browserVersion.split('.')[0]}"`,
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1'
+    };
+}
+
+function isLoginRedirect(finalUrl, originalUrl) {
+    const loginPatterns = [
+        '/login', '/signin', '/sign-in', '/auth',
+        '/accounts/login', '/session/new',
+        'login?', 'signin?', 'next=', 'redirect=',
+        '/checkpoint', '/challenge'
+    ];
+    
+    // Wenn die finale URL Login-Muster enthält
+    const lowerFinal = finalUrl.toLowerCase();
+    if (loginPatterns.some(pattern => lowerFinal.includes(pattern))) {
+        return true;
+    }
+    
+    // Wenn die Domain gewechselt hat (z.B. example.com → accounts.example.com)
+    try {
+        const originalDomain = new URL(originalUrl).hostname;
+        const finalDomain = new URL(finalUrl).hostname;
+        if (originalDomain !== finalDomain) {
+            return true;
+        }
+    } catch {}
+    
+    return false;
+}
+
 //========================================================================================
 // Cache Handling Funktionen
 //========================================================================================
 function getCACHEkey(username){ // Generiert einen eindeutigen Cache-Schlüssel basierend auf dem Benutzernamen
     return`cache_${username.toLowerCase()}`; // Einfacher Schlüssel mit Präfix
 }
+
 
 function getCachedResult(username){ // Überprüft, ob ein Ergebnis im Cache vorhanden und noch gültig ist
     const key=getCACHEkey(username); // Generiert den Cache-Schlüssel
@@ -44,6 +94,7 @@ function getCachedResult(username){ // Überprüft, ob ein Ergebnis im Cache vor
     return null; // Gibt null zurück, wenn kein gültiger Cache-Eintrag vorhanden ist
 }
 
+
 function setCachedResult(username,data){ // Speichert ein Ergebnis im Cache
     const key=getCACHEkey(username);
     // Speichert die Daten zusammen mit dem aktuellen Zeitstempel
@@ -55,27 +106,165 @@ function setCachedResult(username,data){ // Speichert ein Ergebnis im Cache
 
 }
 
+
 //========================================================================================
 // Liste der zu überprüfenden Websites
-// ========================================================================================
+// =======================================================================================
+
 const websites = [
-    "https://www.instagram.com/{username}/", // Zuverlässige anfragen mit puppeteer
-    "https://www.facebook.com/{username}", // Zuverlässige anfragen mit puppeteer
-    "https://www.x.com/{username}", // Blockiert popperteer Anfragen und axios somit eher nutzlos
-    "https://www.github.com/{username}", // Zuverlässige anfragen mit puppeteer
-    "https://www.reddit.com/user/{username}", // Zuverlässige anfragen mit puppeteer
-    "https://www.linkedin.com/in/{username}", //
-    "https://www.youtube.com/@{username}",//
-    "https://www.tiktok.com/@{username}",//
-    "https://de.pinterest.com/{username}/"
+
+    "https://www.instagram.com/{username}/",
+    "https://www.facebook.com/{username}",
+    "https://www.x.com/{username}",
+    "https://github.com/{username}",
+    "https://www.reddit.com/user/{username}",
+    "https://www.linkedin.com/in/{username}",
+    "https://www.youtube.com/@{username}",
+    "https://www.tiktok.com/@{username}",
+    "https://www.pinterest.com/{username}",
+    "https://www.snapchat.com/add/{username}",
+    "https://wa.me/{username}",
+    "https://t.me/{username}",
+    "https://discord.com/users/{username}",
+    "https://{username}.tumblr.com",
+    "https://www.threads.net/@{username}",
+    "https://bere.al/{username}",
+    "https://mastodon.social/@{username}",
+    "https://blueskyweb.xyz/{username}",
+    "https://signal.me/#p/{username}",
+    "https://weixin.qq.com/{username}",
+    "https://user.qzone.qq.com/{username}",
+    "https://weibo.com/{username}",
+    "https://www.douyin.com/user/{username}",
+    "https://www.kuaishou.com/profile/{username}",
+    "https://vk.com/{username}",
+    "https://ok.ru/{username}",
+    "https://line.me/{username}",
+    "https://www.kakao.com/{username}",
+    "https://www.viber.com/{username}",
+    "https://www.skype.com/en/people/{username}",
+    "https://www.meetup.com/members/{username}",
+    "https://nextdoor.com/profile/{username}",
+    "https://www.joinclubhouse.com/@{username}",
+    "https://www.twitch.tv/{username}",
+    "https://www.kick.com/{username}",
+    "https://www.likee.video/{username}",
+    "https://badoo.com/{username}",
+    "https://tinder.com/{username}",
+    "https://bumble.com/{username}",
+    "https://hinge.co/{username}",
+    "https://www.okcupid.com/profile/{username}",
+    "https://www.grindr.com/profile/{username}",
+    "https://weareher.com/{username}",
+    "https://www.pof.com/{username}",
+    "https://tagged.com/profile/{username}",
+    "https://myspace.com/{username}",
+    "https://friendster.com/{username}",
+    "https://hi5.com/{username}",
+    "https://www.flickr.com/people/{username}",
+    "https://www.deviantart.com/{username}",
+    "https://www.behance.net/{username}",
+    "https://dribbble.com/{username}",
+    "https://ello.co/{username}",
+    "https://foursquare.com/{username}",
+    "https://swarmapp.com/{username}",
+    "https://www.yelp.com/user_details?userid={username}",
+    "https://www.goodreads.com/{username}",
+    "https://letterboxd.com/{username}",
+    "https://www.strava.com/athletes/{username}",
+    "https://www.komoot.com/user/{username}",
+    "https://www.ravelry.com/people/{username}",
+    "https://www.wattpad.com/user/{username}",
+    "https://medium.com/@{username}",
+    "https://{username}.substack.com",
+    "https://www.quora.com/profile/{username}",
+    "https://stackoverflow.com/users/{username}",
+    "https://gitlab.com/{username}",
+    "https://www.patreon.com/{username}",
+    "https://onlyfans.com/{username}",
+    "https://www.xing.com/profile/{username}",
+    "https://www.viadeo.com/{username}",
+    "https://www.researchgate.net/profile/{username}",
+    "https://www.academia.edu/{username}",
+    "https://www.couchsurfing.com/people/{username}",
+    "https://untappd.com/user/{username}",
+    "https://soundcloud.com/{username}",
+    "https://{username}.bandcamp.com",
+    "https://www.last.fm/user/{username}",
+    "https://www.reverbnation.com/{username}",
+    "https://www.mixcloud.com/{username}",
+    "https://triller.co/@{username}",
+    "https://www.dubsmash.com/{username}",
+    "https://www.houseparty.com/{username}",
+    "https://yubo.live/{username}",
+    "https://www.peanut-app.io/{username}",
+    "https://www.vero.co/{username}",
+    "https://mewe.com/i/{username}",
+    "https://www.minds.com/{username}",
+    "https://gab.com/{username}",
+    "https://parler.com/profile/{username}",
+    "https://truthsocial.com/{username}",
+    "https://diasporafoundation.org/{username}",
+    "https://friendica.com/{username}",
+    "https://hive.social/{username}",
+    "https://www.caffeine.tv/{username}",
+    "https://trovo.live/{username}",
+    "https://www.periscope.tv/{username}",
+    "https://www.dailymotion.com/{username}",
+    "https://vimeo.com/{username}",
+    "https://rumble.com/{username}",
+    "https://www.bitchute.com/{username}",
+    "https://steamcommunity.com/id/{username}",
+    "https://www.roblox.com/users/{username}",
+    "https://www.minecraft.net/profile/{username}",
+    "https://aminoapps.com/{username}",
+    "https://www.gaiaonline.com/profiles/{username}",
+    "https://www.habbo.com/habbo/{username}",
+    "https://www.imvu.com/catalog/web_profile.php?uid={username}",
+    "https://9gag.com/u/{username}",
+    "https://ifunny.co/user/{username}"
 ];
 
 
 // ========================================================================================
 // Funktion zur Prüfung von Profilen auf verschiedenen Websites
 // ========================================================================================
+
 function contentIndicatesNotFound(html,url,username) {
     // Muster für "Nicht gefunden" in verschiedenen Sprachen
+    const lowerHtml = html.toLowerCase(); // macht HTML-Inhalt kleingeschrieben für einfacheren Vergleich
+    
+    // Login-Prüfung NICHT für Plattformen die generell Login-Walls zeigen
+    // auch wenn das Profil existiert
+    const skipLoginCheck = [
+        'instagram.com',
+        'facebook.com',
+        'threads.net'
+    
+    ];
+
+    const isSkipped = skipLoginCheck.some(domain => url.toLowerCase().includes(domain));
+    
+    if (!isSkipped) {
+        const loginPagePatterns = [
+            'log in to continue',
+            'sign in to see',
+            'please log in',
+            'bitte einloggen',
+            'anmelden um fortzufahren',
+            'you must be logged in',
+            '<input type="password"',
+            'forgot your password',
+            'passwort vergessen'
+        ];
+
+        for (let pattern of loginPagePatterns) {
+            if (lowerHtml.includes(pattern.toLowerCase())) {
+                return { exists: null };
+            }
+        }
+    }
+
   const notFoundPatterns = [
     "page not found",
     "not found",
@@ -94,9 +283,24 @@ function contentIndicatesNotFound(html,url,username) {
     'Das Profil „{username}" ist möglicherweise privat.',
     "Dieser Account existiert nicht",
     "Versuche, nach einem anderen Account zu suchen.",
-];
+    "Bei der Verarbeitung Ihrer Anfrage ist ein Fehler aufgetreten:",
+    "Das angegebene Profil konnte nicht gefunden werden.",
+    "Es tut uns leid. Dieser Inhalt ist nur verfügbar, wenn du eine Zeitmaschine hast.",
+    "Steam-Community :: Fehler",
+    "Diese Seite ist nicht verfügbar ",
+    " Der von dir verfolgte Link scheint nicht zu funktionieren oder die Seite wurde entfernt. ",
+    " Sorry, es gibt keine Nutzer*innen mit diesem Namen. ",
+    "Dieses Konto wurde möglicherweise gebannt oder der Nutzername ist inkorrekt.",
+    "404",
+    "服务器异常，稍后重试",
+    "Es tut uns leid. Dieser Inhalt ist nur verfügbar, wenn du eine Zeitmaschine hast.",
+    "Profile Not Found",
+    " General Error",
+    "General Error | Gaia Online"
 
-  const lowerHtml = html.toLowerCase(); // macht HTML-Inhalt kleingeschrieben für einfacheren Vergleich
+
+
+];
 
     // Instagram nimmt nur Puppeteer Anfragen an. Es werden keine axios Anfragen beantwortet.
 
@@ -122,6 +326,7 @@ function contentIndicatesNotFound(html,url,username) {
         return { exists: true };
     }
 
+
     //=======================================================================================
     // Spezifische Prüfung für GitHub
     //=======================================================================================
@@ -139,6 +344,7 @@ function contentIndicatesNotFound(html,url,username) {
         };
         return { exists: true };
     }
+
 
     //=======================================================================================
     // Spezifische Prüfung für Reddit
@@ -158,6 +364,7 @@ function contentIndicatesNotFound(html,url,username) {
         };
         return { exists: true };
     }
+
 
     //=======================================================================================
     // Spezifische Prüfung für LinkedIn
@@ -183,6 +390,7 @@ function contentIndicatesNotFound(html,url,username) {
         };
         return { exists: true };
     }
+
 
     //=======================================================================================
     // Spezifische Prüfung für Facebook
@@ -237,6 +445,7 @@ function contentIndicatesNotFound(html,url,username) {
     //=======================================================================================
     // Spezifische Prüfung für X.com (ehemals Twitter)
     //=======================================================================================
+
     if (url.toLowerCase().includes("x.com")) {
         const match = lowerHtml.match(/<title>(.*?)<\/title>/i); // Extrahiert den Titel der Seite
         for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
@@ -263,7 +472,8 @@ function contentIndicatesNotFound(html,url,username) {
     //=======================================================================================
     // Spezifische Prüfung für TikTok
     //=======================================================================================
-    if (url.toLowerCase().includes("tiktok.com")) {
+
+    if (url.toLowerCase().includes("tiktok.com") || url.toLowerCase().includes("douyin.com")) {
         const match = lowerHtml.match(/<title>(.*?)<\/title>/i); // Extrahiert den Titel der Seite
         for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
             if (match && match[1].toLowerCase().includes(pattern.toLowerCase())) {
@@ -279,10 +489,71 @@ function contentIndicatesNotFound(html,url,username) {
     }
 
 
+
+    //=======================================================================================
+    // Spezifische Prüfung für Steam-Community
+    //=======================================================================================
+    
+    if (url.toLowerCase().includes("steamcommunity.com")) {
+        const match = lowerHtml.match(/<title>(.*?)<\/title>/i); // Extrahiert den Titel der Seite
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (match && match[1].toLowerCase().includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        }
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (lowerHtml.includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        };
+        return { exists: true };
+    }
+
+    //=======================================================================================
+    // Spezifische Prüfung für qzone.qq.com
+    //=======================================================================================
+    
+    if (url.toLowerCase().includes("qzone.qq.com")) {
+        const match = lowerHtml.match(/<title>(.*?)<\/title>/i); // Extrahiert den Titel der Seite
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (match && match[1].toLowerCase().includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        }
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (lowerHtml.includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        };
+        return { exists: true };
+    }
+
+    //=======================================================================================
+    // Spezifische Prüfung für gaiaonline.com
+    //=======================================================================================
+    
+    if (url.toLowerCase().includes("gaiaonline.com")) {
+        const match = lowerHtml.match(/<title>(.*?)<\/title>/i); // Extrahiert den Titel der Seite
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (match && match[1].toLowerCase().includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        }
+        for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
+            if (lowerHtml.includes(pattern.toLowerCase())) {
+                return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
+            }
+        };
+        return { exists: true };
+    }
+
+
+
     //=======================================================================================
     // Allgemeine Prüfung für alle anderen Seiten
     //=======================================================================================
     // Falls auf einer gesucht wird die spezifische Prüfung nicht definiert ist
+
     for (let pattern of notFoundPatterns) { // Prüfung gegen alle Muster
         if (lowerHtml.includes(pattern.toLowerCase())) {
             return { exists: false }; // gibt zurück, dass das Profil nicht existiert in form eines Booleans
@@ -291,94 +562,146 @@ function contentIndicatesNotFound(html,url,username) {
     return { exists: true };
 }
 
-// ========================================================================================
-// Anfrage Funktion mit Puppeteer für dynamische Webseiten
-// ========================================================================================
-async function fetchWithPuppeteer(username, specificUrl = null) {
-    const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const results = {}; // Speichert Ergebnisse für jede Website
-    
-    // Wenn eine spezifische URL angegeben wurde, nur diese prüfen
-    const urlsToCheck = specificUrl ? [specificUrl] : websites.map(site => site.replace('{username}', username));
-    
-    for (let url of urlsToCheck) {
-        try {
-            const page = await browser.newPage();
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 10000 }); // Warte bis die Seite vollständig geladen ist
-            const content = await page.content(); // Holt den HTML-Inhalt der Seite
-            const checkResult = contentIndicatesNotFound(content,url,username); // UMBENANNT von 'result' zu 'checkResult'
-            await page.close();
-            
-            // Speichere Ergebnis für diese Website
-            results[url] = checkResult.exists;
-        } catch (error) {
-            results[url] = null; // Speichere null bei Fehler
-        }
-    }
-    await browser.close();
-    return results; // Gibt alle Ergebnisse zurück
-}
 
+// ========================================================================================
+// Anfrage Funktion mit Puppeteer - RICHTIGE BATCH-METHODE
+// ========================================================================================
+
+async function fetchWithPuppeteer(username, Proxy_URL, specificUrls = null, concurrency = 5) { // concurrency ist die Anzahl der Browser die gleichzeitig geöffnet werden
+    const launchOptions = { 
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
+
+    if (Proxy_URL) { 
+        launchOptions.args.push(`--proxy-server=${Proxy_URL}`);
+    }
+    
+    // Bestimme welche URLs geprüft werden sollen
+    let urlsToCheck;
+    if (specificUrls) {
+        urlsToCheck = Array.isArray(specificUrls) ? specificUrls : [specificUrls];
+    } else {
+        urlsToCheck = websites.map(site => site.replace('{username}', username));
+    }
+    
+    const allResults = {};
+    
+    // Verarbeite URLs in Batches (blockweise)
+    for (let i = 0; i < urlsToCheck.length; i += concurrency) {
+        const batch = urlsToCheck.slice(i, i + concurrency);
+        
+        //console.log(chalk.blue(`[PUPPETEER] Batch ${Math.floor(i / concurrency) + 1}: Starte ${batch.length} Browser...`));
+        
+        // Starte SEPARATE Browser für jede URL im Batch
+        const batchPromises = batch.map(async (url) => {
+            const browser = await puppeteer.launch(launchOptions);
+            
+            try {
+                const page = await browser.newPage();
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 10000 });
+                const content = await page.content();
+                const checkResult = contentIndicatesNotFound(content, url, username);
+                await page.close();
+                await browser.close();
+                
+                return { url, exists: checkResult.exists };
+            } catch (error) {
+                await browser.close();
+                return { url, exists: null };
+            }
+        });
+        
+        // Warte bis ALLE Browser in diesem Batch fertig sind
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Speichere Ergebnisse
+        batchResults.forEach(({ url, exists }) => {
+            allResults[url] = exists;
+        });
+        
+        //console.log(chalk.blue(`[PUPPETEER] Batch ${Math.floor(i / concurrency) + 1} abgeschlossen`));
+    }
+    
+    return allResults;
+}
 
 // ========================================================================================
 // Anfrage Funktion mit Axios für statische Webseiten
 // ========================================================================================
-async function fetchWithAxios(username) {
-    const results = {}; // Speichert Ergebnisse für jede Website
-    
-    for (let site of websites) { // Schleife durch alle Websites
-        const url = site.replace('{username}', username);
 
-        try {
-            const response = await axios.get(url, {
-                headers: { //Header zur Nachahmung eines echten Browsers
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-                    'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7'
-                },
-                timeout: 5000, // 5 Sekunden Timeout
-                validateStatus: () => true  // Alle Status-Codes akzeptieren
-            });
-            
-            if (response.status === 200) {
-                // Bei Status 200 wird Puppeteer zur Verifizierung verwendet
-                results[url] = 'needs_puppeteer'; // Markierung für Puppeteer-Prüfung
-            } else if (response.status === 404 || response.status === 406) { // Github gibt bei fehler 406 zurück
-                results[url] = false; // Profil nicht gefunden
-            } else {
-                if (url.toLocaleLowerCase().includes('linkedin.com')) {
-                    results[url] = 'needs_puppeteer'; // LinkedIn benötigt oft Puppeteer
-                }
-                else if (url.toLocaleLowerCase().includes('pinterest.com')) {
-                    results[url] = 'needs_puppeteer'; // Pinterest benötigt oft Puppeteer
-                }
-                else{
-                console.log(`Fehler: ${response.status} : ${url}`);
-                results[url] = null; // Unerwarteter Statuscode
-                }
-            }
-        } catch (error) {
-            results[url] = null; // Gibt null zurück bei Fehler
-        }
+async function fetchWithAxios(username, Proxy_URL, concurrency = 20) {
+    const results = {}; // Speichert Ergebnisse für jede Website
+    const axiosConfig = { // Config für die Axios anfragen
+        headers: getDynamicHeaders(), // Ruft Dynamischen header auf und apasst den Header zufällig an
+        timeout: 3000, // 3 Sekunden
+        validateStatus: () => true  // Alle Status-Codes akzeptieren
+    };
+    
+    if (Proxy_URL) {  // fügt der config die Proxy IP hinzu
+        axiosConfig.httpsAgent = new HttpsProxyAgent(Proxy_URL);
+        axiosConfig.proxy = false;
     }
-    return results; // Gibt alle Ergebnisse zurück
+    
+    // Funktion für einzelne URL-Prüfung
+    const checkUrl = async (site) => {
+    const url = site.replace('{username}', username);
+    const perRequestConfig = {
+        ...axiosConfig,
+        headers: getDynamicHeaders() // Jede URL bekommt eigenen Header
+    };
+    try {
+        const response = await axios.get(url, perRequestConfig);
+        // Prüfe ob auf Login/Auth umgeleitet wurde
+        const finalUrl = response.request?.res?.responseUrl || response.config?.url || url;
+        if (isLoginRedirect(finalUrl, url)) {
+                return { url, result: null }; // Kein false-True, sondern unbekannt
+        }
+        if (response.status === 200) {
+            return { url, result: 'needs_puppeteer' };
+        } else if (response.status === 404 || response.status === 406) {
+            return { url, result: false };
+        } else {
+            if (url.toLowerCase().includes('linkedin.com') || 
+                url.toLowerCase().includes('pinterest.com')) {
+                return { url, result: 'needs_puppeteer' };
+            } else {
+                //console.log(`Fehler: ${response.status} : ${url}`);
+                return { url, result: null };
+            }
+        }
+        } catch (error) {
+            return { url, result: null };
+        }
+    };
+    
+    // PARALLEL mit Batches verarbeiten
+    for (let i = 0; i < websites.length; i += concurrency) {
+        const batch = websites.slice(i, i + concurrency);
+        const batchResults = await Promise.all(batch.map(checkUrl));
+        
+        // Ergebnisse speichern
+        batchResults.forEach(({ url, result }) => {
+            results[url] = result;
+        });
+    }
+    
+    return results;
 }
-// ========================================================================================
+
 
 //========================================================================================
 // Hauptfunktion zur Überprüfung des Benutzernamens
-// ========================================================================================
-async function checkUsername(username) {
-    // Überprüfe zuerst den Cache
+// =======================================================================================
+
+async function checkUsername(username, Proxy_URL) {
     const cachedResult = getCachedResult(username);
     if (cachedResult) {
         console.log(`Cache-Treffer für ${username}`);
-        return cachedResult; // Gibt das zwischengespeicherte Ergebnis zurück
+        return cachedResult;
     }
     
-    // Erst Axios versuchen
-    const axiosResults = await fetchWithAxios(username);
+    const axiosResults = await fetchWithAxios(username, Proxy_URL);
     
-    // Sammle alle URLs die mit Puppeteer geprüft werden müssen (Status 200 von Axios)
     const urlsNeedingPuppeteer = [];
     for (let [url, status] of Object.entries(axiosResults)) {
         if (status === 'needs_puppeteer') {
@@ -386,57 +709,89 @@ async function checkUsername(username) {
         }
     }
     
-    // Wenn URLs mit Puppeteer geprüft werden müssen
     if (urlsNeedingPuppeteer.length > 0) {
+        const puppeteerResults = await fetchWithPuppeteer(
+            username, 
+            Proxy_URL, 
+            urlsNeedingPuppeteer,
+            3  // 3 Browser gleichzeitig
+        );
         
-        // Prüfe jede URL einzeln mit Puppeteer
-        for (let url of urlsNeedingPuppeteer) {
-            const puppeteerResult = await fetchWithPuppeteer(username, url);
-            // Überschreibe das Axios-Ergebnis mit dem Puppeteer-Ergebnis
-            axiosResults[url] = puppeteerResult[url];
-        }
+        Object.assign(axiosResults, puppeteerResults);
     }
     
-    setCachedResult(username, axiosResults); // Speichert das Ergebnis im Cache
-    return axiosResults; // Gibt das Ergebnis zurück
+    setCachedResult(username, axiosResults);
+    return axiosResults;
 }
+
+
 // ========================================================================================
 // Input-Menü / Schnittstelle für andere Programme
 // ========================================================================================
 
 async function start() {
     const argumentUser = process.argv[2];
+    let Proxy_URL = process.argv[4];
+    if (Proxy_URL === undefined){
+        Proxy_URL = null;
+    }
 
     if (argumentUser) {
         // Modus: Gesteuert durch Haupt-CLI oder direkter Aufruf mit Name
-        const results = await checkUsername(argumentUser.trim());
+        const results = await checkUsername(argumentUser.trim(), Proxy_URL);
         
         console.log('\n' + chalk.green.bold('--- Ergebnisse der Social-Media Suche ---'));
         
-        // Wir gehen durch das Objekt und schreiben direkt in die Console
-        for (const [url, status] of Object.entries(results)) {
+        // SORTIERUNG: + (true) zuerst, dann - (false), dann ? (null)
+        const sortedEntries = Object.entries(results).sort((a, b) => {
+            const [urlA, statusA] = a;
+            const [urlB, statusB] = b;
+            
+            // Definiere Priorität: true = 0, false = 1, null = 2
+            const priorityA = statusA === true ? 0 : statusA === false ? 1 : 2;
+            const priorityB = statusB === true ? 0 : statusB === false ? 1 : 2;
+            
+            return priorityA - priorityB;
+        });
+        
+        // Ausgabe der sortierten Ergebnisse
+        for (const [url, status] of sortedEntries) {
             if (status === true) {
                 console.log(chalk.green(`[+] GEFUNDEN: `) + chalk.green(url));
             } else if (status === false) {
                 console.log(chalk.red(`[-] NICHTS:   `) + chalk.red(url));
             } else {
-                console.log(chalk.yellow(`[?] FEHLER:   `) + chalk.yellow(url));
+                console.log(chalk.yellow(`[?] Fehler:   `) + chalk.yellow(url));
             }
+
         }
-        
-        process.exit(0); 
+        process.exit(0);
+
     } else {
         // Modus: Manuelle Eingabe ohne Argumente
         readline.question(chalk.yellow("Username: "), async (input) => {
             const results = await checkUsername(input.trim());
-            // Hier nutzen wir die gleiche Logik wie oben
-            for (const [url, status] of Object.entries(results)) {
+            
+            // SORTIERUNG auch hier
+            const sortedEntries = Object.entries(results).sort((a, b) => {
+                const [urlA, statusA] = a;
+                const [urlB, statusB] = b;
+                
+                const priorityA = statusA === true ? 0 : statusA === false ? 1 : 2;
+                const priorityB = statusB === true ? 0 : statusB === false ? 1 : 2;
+                
+                return priorityA - priorityB;
+            });
+            
+            for (const [url, status] of sortedEntries) {
                 if (status === true) console.log(chalk.green(`[+] GEFUNDEN: `) + url);
             }
             readline.close();
         });
     }
 }
+
+
 //================================
 // MAIN
 //================================

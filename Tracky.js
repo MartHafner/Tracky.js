@@ -161,7 +161,7 @@ async function Arghandler(args) {
         // Wenn der Benutzer --version oder -v eingibt, wird die Version angezeigt
         case "--version":
         case "-v":
-            console.log(chalk.blue("Tracky Version 1.0.0"));
+            console.log(chalk.blue("Tracky Version 2.1.0"));
             process.exit(0); // Programm wird ohne Fehler beendet
             break;
 

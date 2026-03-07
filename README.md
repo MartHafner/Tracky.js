@@ -27,6 +27,8 @@
 - Analyse von Mobilfunk- und Festnetznummern mit Länder- und Anbieterinformationen  
 - Kombination aus Axios und Puppeteer für schnelle und dynamische Anfragen  
 - Parallele Verarbeitung mit optimierter Concurrency
+- Dynamische Header-Generierung pro Request für bessere Anti-Bot-Umgehung
+- Login-Redirect-Erkennung verhindert falsche Treffer (false-True)
 - Nutzung von JSON-Datenbanken für Vorwahl- und Anbieterdaten (DE, US, FR)  
 - Intelligente Erkennung von „Profil existiert nicht"  
 - Drei Erkennungsmethoden für E-Mail-Checks: öffentliche APIs, Validierungs-Endpoints, Fehlercode-Analyse
@@ -72,12 +74,15 @@ Kein Puppeteer nötig — alle Checks laufen über direkte HTTPS-Anfragen an öf
 - Parallele Batch-Verarbeitung: 20 URLs gleichzeitig
 - Reduzierter Timeout: 3 Sekunden für schnelle Fehlerkennung
 - Effizientes Error-Handling ohne Blockierung
+- Dynamische Header pro Request: Anti-Bot-Erkennung wird erschwert, da jede URL einen eigenen zufällig generierten User-Agent erhält (vorher: ein Header für alle ~110 URLs)
+- Login-Redirect-Erkennung: verhindert false-True durch Login-Weiterleitungen
 
 #### Puppeteer-Optimierungen (Social-Media)
 - Separate Browser-Instanzen: Jeder Browser lädt nur 1 Tab
 - Batch-Verarbeitung: 3 Browser parallel
 - Keine Ressourcen-Konkurrenz zwischen Tabs
 - Jeder Browser erhält volle CPU/RAM/Network-Ressourcen
+- Twitch: zusätzliches `waitForSelector` für vollständiges React-Rendering
 
 #### Mail-Checker-Optimierungen
 - Eigene `runWithConcurrency()` Funktion: 10 Requests gleichzeitig
@@ -114,10 +119,12 @@ Kein Puppeteer nötig — alle Checks laufen über direkte HTTPS-Anfragen an öf
 ### Social-Media-Suche
 1. Benutzer gibt einen **Username** ein
 2. Cache wird geprüft (instant Antwort wenn vorhanden)
-3. Axios führt schnelle HTTP-Requests aus (parallel)
-4. Unklare Ergebnisse (Status 200) werden mit Puppeteer geprüft
-5. Ergebnisse werden sortiert: Gefunden, nicht gefunden, Fehler
-6. Ergebnisse werden gespeichert und in der Konsole ausgegeben
+3. Axios führt schnelle HTTP-Requests aus (parallel, mit individuellem Header pro URL)
+4. Nach jedem Request: Login-Redirect-Prüfung via `isLoginRedirect()`
+5. Unklare Ergebnisse (Status 200) werden mit Puppeteer geprüft
+6. Puppeteer prüft HTML auf Login-Walls und plattformspezifische Not-Found-Muster
+7. Ergebnisse werden sortiert: Gefunden, nicht gefunden, Fehler
+8. Ergebnisse werden gespeichert und in der Konsole ausgegeben
 
 ### E-Mail-Suche
 1. Benutzer gibt eine **E-Mail-Adresse** ein
@@ -174,6 +181,7 @@ Kein Puppeteer nötig — alle Checks laufen über direkte HTTPS-Anfragen an öf
 - **axios** → HTTP-Requests (Social-Media)
 - **puppeteer** → Headless-Browser für dynamische Seiten (Social-Media)
 - **https-proxy-agent** → Proxy-Unterstützung
+- **user-agents** → Zufällige, realistische User-Agent-Generierung pro Request
 - **chalk** → Farbige Konsolenausgabe
 - **dotenv** → Laden von Umgebungsvariablen aus `.env`
 - **cli-progress** → Fortschrittsanzeige
@@ -194,6 +202,7 @@ tracky-osint/
 ├─ Mail_Checker.js                # E-Mail Modul
 ├─ Number_Check.js                # Telefonnummern Analyse
 ├─ Festnetz_Analyse.py            # Python Festnetz-Analyse
+├─ google_Dorking_phonenumber.py  # Python DuckDuckGo-Scraper für Telefonnummern
 ├─ Vorwahl_Mobilfunk_DE_US.json   # DE & US Anbieter-Datenbank
 ├─ Vorwahl_Mobilfunk_FR.json      # FR Anbieter-Datenbank
 ├─ setup.js                       # Erstellt Projektverzeichnis Tracky-OSINT
@@ -231,14 +240,51 @@ HTML-Inhalte werden analysiert und auf typische Fehlerindikatoren geprüft:
 - `profil existiert nicht`
 - `Dieser Account existiert nicht`
 - `Dieses Konto wurde gesperrt`
+- `sorry. unless you've got a time machine, that content is unavailable.`
 
-Plattform-spezifische Analyse:
+#### Login-Wall-Erkennung (zwei Stufen)
 
-- Instagram → Meta-Tags (og:title)
-- Facebook → Titel & Body
-- GitHub / Reddit → `<title>`
-- LinkedIn → Login-Texte
-- TikTok / YouTube / X → Titel & Body
+Viele Plattformen leiten nicht eingeloggte Besucher auf Login-Seiten um, anstatt eine klare 404-Antwort zu liefern. Ohne Gegenmassnahmen würde das Tool diese Login-Seiten als „gefunden" werten (false-True). Daher gibt es zwei Erkennungsstufen:
+
+**Stufe 1 — Axios (URL-Prüfung via `isLoginRedirect()`):**
+Nach jedem Request prüft die Funktion `isLoginRedirect()` ob die finale URL auf eine Login-Seite zeigt. Erkannt werden URL-Muster wie `/login`, `/signin`, `/auth`, `/accounts/login`, `next=`, `redirect=`, `/checkpoint` und `/challenge`. Zusätzlich wird geprüft ob ein Domain-Wechsel stattgefunden hat (z.B. `instagram.com` → `accounts.instagram.com`). Bei Treffer → `[?] Fehler` statt falschem `[+] GEFUNDEN`.
+
+**Stufe 2 — Puppeteer (HTML-Inhalt):**
+`contentIndicatesNotFound()` prüft als allererstes den geladenen HTML-Inhalt auf Login-Muster wie `log in to continue`, `<input type="password">`, `please log in`, `bitte einloggen`, `forgot your password` usw. Bei Treffer → `[?] Fehler`.
+
+**Ausnahmen von der Login-Wall-Prüfung:**
+Folgende Plattformen zeigen Login-Formulare auch bei existierenden Profilen im HTML — sie werden von der allgemeinen Login-Prüfung ausgenommen und nutzen stattdessen ihre eigene plattformspezifische Erkennung:
+
+| Plattform | Grund |
+|---|---|
+| Instagram | Zeigt Profil-Metadaten und Login-Formular gleichzeitig im HTML |
+| Facebook | Login-DOM ist immer vorhanden, unabhängig vom Profilstatus |
+| LinkedIn | Partial-Content + Login-Wall erscheinen zusammen |
+| Threads | Gleiches Verhalten wie Instagram (selbe Infrastruktur) |
+
+#### Plattform-spezifische Analyse
+
+| Plattform | Methode | Besonderheit |
+|---|---|---|
+| Instagram | Meta-Tag `og:title` | Login-Wall-Prüfung übersprungen |
+| Facebook | Titel, Body & Textinhalt (3-stufig) | Login-Wall-Prüfung übersprungen |
+| GitHub | `<title>` | — |
+| Reddit | `<title>` | — |
+| LinkedIn | `<title>` + Platzhalter-Muster | Login-Wall-Prüfung übersprungen |
+| TikTok | `<title>` | — |
+| YouTube | `<title>` | — |
+| X (Twitter) | `<title>` & Body | — |
+| Twitch | `<title>` (React-SPA) | Sonderbehandlung, siehe unten |
+| Alle anderen | Allgemeine Musterprüfung im gesamten HTML | — |
+
+#### Warum Twitch eine Sonderbehandlung braucht
+
+Twitch ist eine React Single-Page-Application. Der initiale HTML-Quelltext ist bei jedem Aufruf identisch — egal ob der gesuchte User existiert oder nicht. Erst nach vollständigem JavaScript-Rendering unterscheidet sich der `<title>`:
+
+- `shroud - Twitch` → User existiert
+- `Twitch` → User existiert nicht
+
+Puppeteer wartet daher mit `waitForSelector` zusätzlich auf das gerenderte Seiten-Element, bevor der Titel ausgewertet wird.
 
 ### E-Mail-Checker
 
@@ -270,10 +316,13 @@ Manche Plattformen geben beim Login-Versuch unterschiedliche Fehlermeldungen zur
 Input (Username) → Cache prüfen
    ↓ nicht vorhanden
 Axios Phase (parallel, 20 concurrent)
+   ↓ Pro Request: eigener Header + isLoginRedirect() Prüfung
    ↓ 5-8 Sekunden
 Status-Sortierung
-   ↓ 404/406 → false, 200 → Puppeteer
+   ↓ 404/406 → false | Login-Redirect → null | 200 → Puppeteer
 Puppeteer Phase (3 Browser parallel)
+   ↓ Login-Wall Prüfung → null
+   ↓ Plattformspezifische Not-Found Prüfung
    ↓ 50-60 Sekunden
 Ergebnisse sortieren (Gefunden → Nicht gefunden → Fehler)
    ↓
@@ -324,9 +373,10 @@ npm run setup
 
 Dieser Befehl erstellt automatisch das benötigte Verzeichnis `Tracky-OSINT`, falls es noch nicht existiert.
 
-### Python-Abhängigkeit installieren
+### Python-Abhängigkeiten installieren
 ```bash
 pip install phonenumbers
+pip install requests beautifulsoup4
 ```
 
 ### API-Keys konfigurieren (optional)
