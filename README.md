@@ -52,11 +52,6 @@ Durchschnittliche Suchzeit für 114 Social-Media-Plattformen: **ca. 60 Sekunden*
 | Puppeteer-Check | 3 Browser parallel | 30-40 | 50-60s |
 | **Gesamt** | | **114** | **~60s** |
 
-**Vergleich:**
-- Sequentielle Version: ~210 Sekunden (3.5 Minuten)
-- Optimierte Version: ~60 Sekunden (1 Minute)
-- **Speedup: 3-3.5x schneller**
-
 ### E-Mail-Suche
 
 Durchschnittliche Suchzeit für 16 Plattformen: **ca. 8 Sekunden**
